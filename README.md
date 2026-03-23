@@ -26,15 +26,15 @@ Run as a **standard user** (not root). The script configures the service to run 
 **Option 1: Quick Run**
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-webhook/main/setup-webhook.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-github-webhook/main/setup.sh)"
 ```
 
 **Option 2: Download & Inspect**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-webhook/main/setup-webhook.sh -o setup-webhook.sh
-chmod +x setup-webhook.sh
-./setup-webhook.sh
+curl -fsSL https://raw.githubusercontent.com/Shubhamc4/setup-github-webhook/main/setup.sh -o setup.sh
+chmod +x setup.sh
+bash setup.sh
 ```
 
 ### 2. Add the Deploy Key to GitLab
