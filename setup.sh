@@ -237,7 +237,12 @@ Description=Git Webhook Listener
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/webhook -hooks $HOOKS_FILE -hotreload -verbose -urlprefix ""
+ExecStart=/usr/bin/webhook \
+  -hooks $HOOKS_FILE \
+  -hotreload \
+  -logfile $DEPLOY_BASE_PATH/webhook.log \
+  -verbose \
+  -urlprefix ""
 Restart=always
 User=$USER
 
