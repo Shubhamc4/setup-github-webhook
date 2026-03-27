@@ -122,12 +122,16 @@ set -e
 # Force git to use the specific deploy key
 export GIT_SSH="SSH_WRAPPER_PLACEHOLDER"
 export COMPOSER_ALLOW_SUPERUSER=1
+
 LOG_FILE="/tmp/PROJECT_NAME_PLACEHOLDER.log"
 PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
-DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
 PUBLIC_IP=$(hostname -I | awk '{print $1}')
+
 APP_NAME="PROJECT_NAME_PLACEHOLDER"
+BRANCH="BRANCH_NAME_PLACEHOLDER"
 PROJECT_PATH="PROJECT_PATH_PLACEHOLDER"
+DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
+
 cd "$PROJECT_PATH"
 
 send_discord() {
@@ -146,7 +150,7 @@ send_discord() {
 
   echo $(jq -n \
     --arg title "🚀 Deployment: $APP_NAME" \
-    --arg desc "$MSG" --arg status "$STATUS" --arg branch "BRANCH_NAME_PLACEHOLDER" \
+    --arg desc "$MSG" --arg status "$STATUS" --arg branch "$BRANCH" \
     --arg hash "$COMMIT_HASH" --arg msg "$COMMIT_MSG" --arg auth "$COMMIT_AUTHOR" \
     --arg url "$COMMIT_URL" --arg srv "$APP_NAME" --arg ip "$PUBLIC_IP" \
     --arg path "$PROJECT_PATH" --arg color "$COLOR" \
@@ -169,15 +173,15 @@ send_discord() {
 trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"' ERR
 
 {
-  git fetch origin "BRANCH_NAME_PLACEHOLDER"
+  git fetch origin "$BRANCH"
 
   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-  if [ "$CURRENT_BRANCH" != "BRANCH_NAME_PLACEHOLDER" ]; then
-      git checkout "BRANCH_NAME_PLACEHOLDER" || git checkout -b "BRANCH_NAME_PLACEHOLDER" --track origin/"BRANCH_NAME_PLACEHOLDER"
+  if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
+      git checkout "$BRANCH" || git checkout -b "$BRANCH" --track origin/"$BRANCH"
   fi
 
-  git pull origin "BRANCH_NAME_PLACEHOLDER"
+  git pull origin "$BRANCH"
 
   CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
 
