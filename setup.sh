@@ -35,6 +35,7 @@ read -p "Enter Deploy Webhook Base Path [$DEPLOY_BASE_PATH]: " input
 DEPLOY_BASE_PATH=${input:-$DEPLOY_BASE_PATH}
 
 read -p "Enter your project path (e.g., /var/www/$REPO_NAME): " PROJECT_PATH
+PROJECT_PATH=${PROJECT_PATH:-/var/www/$REPO_NAME}
 PROJECT_NAME=$(basename "$PROJECT_PATH")
 
 HOOK_SECRET=$(openssl rand -hex 16)
