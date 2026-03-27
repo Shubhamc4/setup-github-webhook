@@ -28,10 +28,13 @@ fi
 #######################################
 DEPLOY_BASE_PATH="/var/www/deploy-webhook"
 
+read -p "Enter GitLab Repo SSH path (e.g., git@gitlab.com:user/repo.git): " REPO_PATH
+REPO_NAME=$(basename "$REPO_PATH" .git)
+
 read -p "Enter Deploy Webhook Base Path [$DEPLOY_BASE_PATH]: " input
 DEPLOY_BASE_PATH=${input:-$DEPLOY_BASE_PATH}
 
-read -p "Enter your project path (e.g., /var/www/my-app): " PROJECT_PATH
+read -p "Enter your project path (e.g., /var/www/$REPO_NAME): " PROJECT_PATH
 PROJECT_NAME=$(basename "$PROJECT_PATH")
 
 HOOK_SECRET=$(openssl rand -hex 16)
@@ -69,7 +72,6 @@ read -p "Press ENTER once the Deploy Key is added to GitLab..."
 #######################################
 # 5. Git Configuration
 #######################################
-read -p "Enter GitLab Repo SSH path (e.g., git@gitlab.com:user/repo.git): " REPO_PATH
 read -p "Enter branch to deploy: " BRANCH_NAME
 read -p "Enter Discord Webhook URL (Blank to skip): " DISCORD_URL
 
