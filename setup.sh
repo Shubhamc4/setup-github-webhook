@@ -119,58 +119,20 @@ cat > "$DEPLOY_SCRIPT" <<'EOF'
 #!/bin/bash
 set -e
 
-# Force git to use the specific deploy key
 export GIT_SSH="SSH_WRAPPER_PLACEHOLDER"
+export GIT_TERMINAL_PROMPT=0
 export COMPOSER_ALLOW_SUPERUSER=1
 
-LOG_FILE="/tmp/PROJECT_NAME_PLACEHOLDER.log"
-PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
-PUBLIC_IP=$(hostname -I | awk '{print $1}')
+export APP_NAME="PROJECT_NAME_PLACEHOLDER"
+export BRANCH="BRANCH_NAME_PLACEHOLDER"
+export PROJECT_PATH="PROJECT_PATH_PLACEHOLDER"
+export DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
 
-APP_NAME="PROJECT_NAME_PLACEHOLDER"
-BRANCH="BRANCH_NAME_PLACEHOLDER"
-PROJECT_PATH="PROJECT_PATH_PLACEHOLDER"
-DISCORD_WEBHOOK_URL="DISCORD_URL_PLACEHOLDER"
+source <(curl -sL https://raw.githubusercontent.com/Shubhamc4/setup-github-webhook/main/discord_notify.sh)
 
 cd "$PROJECT_PATH"
 
-send_discord() {
-  if [ -z "$DISCORD_WEBHOOK_URL" ]; then
-    mv "$LOG_FILE" "DEPLOY_BASE_PATH_PLACEHOLDER/logs/PROJECT_NAME_PLACEHOLDER-$(date +%s).log"
-    return
-  fi
-  local MSG="$1"
-  local COLOR="$2"
-  local STATUS="$3"
-
-  local COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "N/A")
-  local COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null || echo "N/A")
-  local COMMIT_AUTHOR=$(git log -1 --pretty=%an 2>/dev/null || echo "N/A")
-  local COMMIT_URL="REPO_PATH_PLACEHOLDER/-/commit/$(git rev-parse HEAD 2>/dev/null || echo "")"
-
-  echo $(jq -n \
-    --arg title "🚀 Deployment: $APP_NAME" \
-    --arg desc "$MSG" --arg status "$STATUS" --arg branch "$BRANCH" \
-    --arg hash "$COMMIT_HASH" --arg msg "$COMMIT_MSG" --arg auth "$COMMIT_AUTHOR" \
-    --arg url "$COMMIT_URL" --arg srv "$APP_NAME" --arg ip "$PUBLIC_IP" \
-    --arg path "$PROJECT_PATH" --arg color "$COLOR" \
-    '{username: "\($srv) Bot", embeds: [{title: $title, description: $desc, color: ($color|tonumber), fields: [
-      {name: "Server", value: $srv, inline: true}, {name: "IP", value: $ip, inline: true},
-      {name: "Path", value: ("`" + $path + "`"), inline: false}, {name: "Status", value: $status, inline: true},
-      {name: "Branch", value: $branch, inline: true}, {name: "Commit", value: "[\($hash)](\($url))", inline: true},
-      {name: "Author", value: $auth, inline: true}, {name: "Message", value: $msg, inline: false}
-    ], timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), footer: {text: "Deploy System"}}]}'
-  ) > "$PAYLOAD_FILE"
-
-  curl -s -X POST \
-    -F "payload_json=<${PAYLOAD_FILE}" \
-    -F "file1=@$LOG_FILE" \
-    "$DISCORD_WEBHOOK_URL" > /dev/null 2>&1
-  
-  rm -f "$LOG_FILE" "$PAYLOAD_FILE"
-}
-
-trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"' ERR
+trap 'notify_deploy "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"' ERR
 
 {
   git fetch origin "$BRANCH"
@@ -196,6 +158,11 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
     php artisan migrate --force
   fi
 
+  php artisan optimize:clear
+  php artisan optimize
+  php artisan view:cache
+  php artisan event:cache
+
   if echo "$CHANGED_FILES" | grep -qE "package.json|resources/"; then
     if echo "$CHANGED_FILES" | grep -qE "package.json"; then
       npm ci # or yarn install --frozen-lockfile
@@ -208,7 +175,7 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
       echo "⚠️ .env.example changed. Check if your .env needs manual updates!"
   fi
 
-  send_discord "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
+  notify_deploy "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
 } 2>&1 | tee -a "$LOG_FILE"
 EOF
 
