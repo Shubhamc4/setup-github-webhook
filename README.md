@@ -176,64 +176,20 @@ After making changes, reload the systemd daemon and restart the service:
 #!/bin/bash
 set -e
 
-# Force git to use the specific deploy key
 export GIT_SSH="/path/to/ssh/ssh_wrapper.sh"
 export GIT_TERMINAL_PROMPT=0
 export COMPOSER_ALLOW_SUPERUSER=1
 
-LOG_FILE="/tmp/app.log"
-PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
-PUBLIC_IP=$(hostname -I | awk '{print $1}')
+export APP_NAME="app-name"
+export PROJECT_PATH="/path/to/project/"
+export BRANCH="main"
+export DISCORD_WEBHOOK_URL="REPLACE_WITH_YOUR_DISCORD_WEBHOOK_URL"
 
-PROJECT_PATH="/path/to/project/"
-BRANCH="main"
-APP_NAME="app-name"
-DISCORD_WEBHOOK_URL="REPLACE_WITH_YOUR_DISCORD_WEBHOOK_URL"
+source <(curl -sL https://raw.githubusercontent.com/Shubhamc4/setup-github-webhook/main/discord_notify.sh)
 
 cd "$PROJECT_PATH"
 
-send_discord() {
-  [ -z "$DISCORD_WEBHOOK_URL" ] && return
-  local MSG="$1"
-  local COLOR="$2"
-  local STATUS="$3"
-
-  local COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "N/A")
-  local COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null || echo "N/A")
-  local COMMIT_AUTHOR=$(git log -1 --pretty=%an 2>/dev/null || echo "N/A")
-  local COMMIT_URL=$(git remote get-url origin 2>/dev/null | sed -E 's|git@([^:]+):|https://\1/|; s|https://([^@]+)@|https://|; s|\.git$||')/commit/$(git rev-parse HEAD 2>/dev/null)
-
-  echo $(jq -n \
-    --arg title "🚀 Automatic Deployment: $APP_NAME" \
-    --arg desc "$MSG" --arg status "$STATUS" --arg branch "$BRANCH" \
-    --arg hash "$COMMIT_HASH" --arg msg "$COMMIT_MSG" --arg auth "$COMMIT_AUTHOR" \
-    --arg url "$COMMIT_URL" --arg srv "$APP_NAME" --arg ip "$PUBLIC_IP" \
-    --arg path "$PROJECT_PATH" --arg color "$COLOR" \
-    '{username: "Deploy Bot", embeds: [{title: $title, description: $desc, color: ($color|tonumber), fields: [
-      {name: "Server", value: $srv, inline: true}, {name: "IP", value: $ip, inline: true},
-      {name: "Path", value: ("`" + $path + "`"), inline: false}, {name: "Status", value: $status, inline: true},
-      {name: "Branch", value: $branch, inline: true}, {name: "Commit", value: "[\($hash)](\($url))", inline: true},
-      {name: "Author", value: $auth, inline: true}, {name: "Message", value: $msg, inline: false}
-    ], timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")), footer: {text: "Deploy System"}}]}'
-  ) > "$PAYLOAD_FILE"
-
-  if [ ! -f "$LOG_FILE" ]; then
-    curl -s -X POST \
-      -H "Content-Type: application/json" \
-      -d @"$PAYLOAD_FILE" \
-      "$DISCORD_WEBHOOK_URL" > /dev/null 2>&1
-  else
-    curl -s -X POST \
-      -F "payload_json=<${PAYLOAD_FILE}" \
-      -F "file1=@$LOG_FILE" \
-      "$DISCORD_WEBHOOK_URL" > /dev/null 2>&1
-    rm -f "$LOG_FILE"
-  fi
-
-  rm -f "$PAYLOAD_FILE" 
-}
-
-trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"; php artisan up' ERR
+trap 'notify_deploy "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILED"; php artisan up' ERR
 
 {
   php artisan down --retry=60
@@ -260,9 +216,10 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
     php artisan migrate --force
   fi
 
-  php artisan config:cache
-  php artisan route:cache
+  php artisan optimize:clear
+  php artisan optimize
   php artisan view:cache
+  php artisan event:cache
 
   if echo "$CHANGED_FILES" | grep -qE "package.json|package-lock.json|resources/"; then
     if echo "$CHANGED_FILES" | grep -qE "package.json|package-lock.json"; then
@@ -271,6 +228,8 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
 
     npm run build
   fi
+
+  chown -R www-data:www-data storage bootstrap/cache public/build
 
   systemctl restart supervisor && \
   service php8.5-fpm reload && \
@@ -283,7 +242,7 @@ trap 'send_discord "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAILE
 
   php artisan up
 
-  send_discord "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
+  notify_deploy "🚀 Successfully deployed the code and built assets." 3066993 "SUCCESS"
 } 2>&1 | tee -a "$LOG_FILE"
 ```
 
