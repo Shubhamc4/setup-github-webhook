@@ -4,6 +4,7 @@ APP_NAME="${APP_NAME:-"Webhook"}"
 PROJECT_PATH="${PROJECT_PATH:-$(pwd)}"
 BRANCH="${BRANCH:-"main"}"
 PAYLOAD_FILE="/tmp/$(date +%s)_payload.json"
+LOG_FILE="/tmp/deploy.log"
 
 get_ip() {
   local ip
