@@ -24,9 +24,9 @@ else
 fi
 
 DEPLOY_BASE_PATH="/var/www/deploy-webhook"
-SSH_FOLDER="$DEPLOY_BASE_PATH/ssh"
 read -p "Enter Deploy Webhook Base Path [$DEPLOY_BASE_PATH]: " input
 DEPLOY_BASE_PATH=${input:-$DEPLOY_BASE_PATH}
+SSH_FOLDER="$DEPLOY_BASE_PATH/ssh"
 
 #######################################
 # 1. Git Configuration
