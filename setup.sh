@@ -145,6 +145,9 @@ trap 'notify_deploy "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAIL
 
   if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
       git checkout "$BRANCH" || git checkout -b "$BRANCH" --track origin/"$BRANCH"
+  else
+    git reset --hard HEAD
+    git clean -fd
   fi
 
   git pull origin "$BRANCH"
