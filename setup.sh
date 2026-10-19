@@ -160,17 +160,7 @@ trap 'notify_deploy "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAIL
     composer install --no-dev --no-interaction --optimize-autoloader
   fi
 
-  # Laravel specific
-  if echo "$CHANGED_FILES" | grep -qE "database/migrations/"; then
-    php artisan migrate --force
-  fi
-
-  php artisan optimize:clear
-  php artisan optimize
-  php artisan view:cache
-  php artisan event:cache
-
-  if echo "$CHANGED_FILES" | grep -qE "package.json|resources/"; then
+  if echo "$CHANGED_FILES" | grep -qE "package.json|resources/|src/"; then
     if echo "$CHANGED_FILES" | grep -qE "package.json"; then
       npm ci
     fi
