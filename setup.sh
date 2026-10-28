@@ -29,10 +29,16 @@ DEPLOY_BASE_PATH=${input:-$DEPLOY_BASE_PATH}
 SSH_FOLDER="$DEPLOY_BASE_PATH/ssh"
 SSH_PATH="$SSH_FOLDER/id_ed25519"
 
-read -p "Enter GitLab Repo SSH path (e.g., git@gitlab.com:user/repo.git): " REPO_PATH
+read -p "Enter Git Repo SSH path (e.g., git@github.com:user/repo.git or git@gitlab.com:user/repo.git): " REPO_PATH
 read -p "Enter branch to deploy: " BRANCH_NAME
 REPO_NAME=$(basename "$REPO_PATH" .git)
 PUBLIC_IP=$(hostname -I | awk '{print $1}')
+
+if [[ "$REPO_PATH" =~ github\.com ]]; then
+  PROVIDER="github"
+else
+  PROVIDER="gitlab"
+fi
 
 #######################################
 # 3. Conditional SSH Key Generation & Wrapper
@@ -60,13 +66,23 @@ chmod +x "$SSH_WRAPPER"
 PUB_KEY=$(cat "${SSH_PATH}.pub")
 
 echo "-------------------------------------------------------"
-echo "🔑 ACTION REQUIRED: ADD DEPLOY KEY TO GITLAB"
-echo "1. Go to your GitLab Repository -> Settings -> Repository -> Deploy Keys"
-echo "2. Title: Webhook-Deploy-$REPO_NAME"
-echo "3. Key:"
-echo "$PUB_KEY"
-echo "-------------------------------------------------------"
-read -p "Press ENTER once the Deploy Key is added to GitLab..."
+if [ "$PROVIDER" = "github" ]; then
+  echo "🔑 ACTION REQUIRED: ADD DEPLOY KEY TO GITHUB"
+  echo "1. Go to your GitHub Repository -> Settings -> Deploy keys -> Add deploy key"
+  echo "2. Title: Webhook-Deploy-$REPO_NAME"
+  echo "3. Key:"
+  echo "$PUB_KEY"
+  echo "-------------------------------------------------------"
+  read -p "Press ENTER once the Deploy Key is added to GitHub..."
+else
+  echo "🔑 ACTION REQUIRED: ADD DEPLOY KEY TO GITLAB"
+  echo "1. Go to your GitLab Repository -> Settings -> Repository -> Deploy Keys"
+  echo "2. Title: Webhook-Deploy-$REPO_NAME"
+  echo "3. Key:"
+  echo "$PUB_KEY"
+  echo "-------------------------------------------------------"
+  read -p "Press ENTER once the Deploy Key is added to GitLab..."
+fi
 
 #######################################
 # 4. Verify repo access
@@ -95,17 +111,72 @@ echo "-------------------------------------------------------"
 read -p "Enter Discord Webhook URL (Blank to skip): " DISCORD_URL
 
 #######################################
-# 6. Initial Clone
+# 6. Repository Setup (Clone or Link Existing Folder)
 #######################################
 if [ -d "$PROJECT_PATH" ]; then
-  if [ ! -d "$PROJECT_PATH/.git" ]; then
-    echo "⚠️  WARNING: $PROJECT_PATH exists but is NOT a git repo."
-    read -p "Delete directory and re-clone? (y/n): " CONFIRM
-    [[ "$CONFIRM" == "y" ]] && sudo rm -rf "$PROJECT_PATH" || exit 1
-  fi
-fi
+  if [ -d "$PROJECT_PATH/.git" ]; then
+    echo "📁 Existing git repository detected at $PROJECT_PATH"
+    
+    # Check existing remote origin URL and replace HTTPS / old URL if needed
+    CURRENT_ORIGIN=$(git -C "$PROJECT_PATH" remote get-url origin 2>/dev/null || echo "")
+    if [ -n "$CURRENT_ORIGIN" ]; then
+      if [ "$CURRENT_ORIGIN" != "$REPO_PATH" ]; then
+        echo "🔄 Updating remote origin:"
+        echo "   From: $CURRENT_ORIGIN"
+        echo "   To:   $REPO_PATH"
+        git -C "$PROJECT_PATH" remote set-url origin "$REPO_PATH"
+      else
+        echo "✅ Remote origin is already set to $REPO_PATH"
+      fi
+    else
+      echo "Adding remote origin $REPO_PATH..."
+      git -C "$PROJECT_PATH" remote add origin "$REPO_PATH"
+    fi
 
-if [ ! -d "$PROJECT_PATH" ]; then
+    echo "Testing connection and fetching branch '$BRANCH_NAME'..."
+    GIT_SSH="$SSH_WRAPPER" git -C "$PROJECT_PATH" fetch origin "$BRANCH_NAME"
+
+    CURRENT_BRANCH=$(git -C "$PROJECT_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [ "$CURRENT_BRANCH" != "$BRANCH_NAME" ]; then
+      echo "Switching to branch '$BRANCH_NAME'..."
+      GIT_SSH="$SSH_WRAPPER" git -C "$PROJECT_PATH" checkout "$BRANCH_NAME" 2>/dev/null || \
+      GIT_SSH="$SSH_WRAPPER" git -C "$PROJECT_PATH" checkout -b "$BRANCH_NAME" --track origin/"$BRANCH_NAME" 2>/dev/null || true
+    fi
+  else
+    echo "⚠️  WARNING: Directory $PROJECT_PATH exists but is NOT a git repository."
+    echo "Options:"
+    echo "  1) Initialize git in this existing folder and link to $REPO_PATH (preserves existing files/configs)"
+    echo "  2) Delete directory and clone fresh"
+    echo "  3) Cancel setup"
+    read -p "Select option [1-3]: " FOLDER_CHOICE
+    case "$FOLDER_CHOICE" in
+      1)
+        echo "Initializing git repository in $PROJECT_PATH..."
+        git -C "$PROJECT_PATH" init
+        git -C "$PROJECT_PATH" remote add origin "$REPO_PATH"
+        GIT_SSH="$SSH_WRAPPER" git -C "$PROJECT_PATH" fetch origin "$BRANCH_NAME"
+        git -C "$PROJECT_PATH" branch -M "$BRANCH_NAME"
+        git -C "$PROJECT_PATH" branch --set-upstream-to="origin/$BRANCH_NAME" "$BRANCH_NAME" 2>/dev/null || true
+        ;;
+      2)
+        read -p "Are you sure you want to delete $PROJECT_PATH? (y/n): " CONFIRM
+        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+          sudo rm -rf "$PROJECT_PATH"
+          echo "Cloning repository into $PROJECT_PATH..."
+          GIT_SSH="$SSH_WRAPPER" git clone -b "$BRANCH_NAME" "$REPO_PATH" "$PROJECT_PATH"
+        else
+          echo "Setup aborted."
+          exit 1
+        fi
+        ;;
+      *)
+        echo "Setup aborted."
+        exit 1
+        ;;
+    esac
+  fi
+else
+  echo "Cloning repository into $PROJECT_PATH..."
   GIT_SSH="$SSH_WRAPPER" git clone -b "$BRANCH_NAME" "$REPO_PATH" "$PROJECT_PATH"
 fi
 
@@ -196,8 +267,14 @@ chmod +x "$DEPLOY_SCRIPT"
 # 8. Webhook & Systemd
 #######################################
 HOOKS_FILE="$DEPLOY_BASE_PATH/hooks.json"
-NEW_HOOK=$(jq -n --arg id "$PROJECT_NAME" --arg cmd "$DEPLOY_SCRIPT" --arg dir "$PROJECT_PATH" --arg secret "$HOOK_SECRET" --arg ref "refs/heads/$BRANCH_NAME" \
-'{id: $id, "execute-command": $cmd, "command-working-directory": $dir, "trigger-rule": {"and": [{"match": {"type": "value", "value": "push", "parameter": {"source": "payload", "name": "object_kind"}}}, {"match": {"type": "value", "value": $ref, "parameter": {"source": "payload", "name": "ref"}}}, {"match": {"type": "value", "value": $secret, "parameter": {"source": "header", "name": "X-Gitlab-Token"}}}]}}')
+
+if [ "$PROVIDER" = "github" ]; then
+  NEW_HOOK=$(jq -n --arg id "$PROJECT_NAME" --arg cmd "$DEPLOY_SCRIPT" --arg dir "$PROJECT_PATH" --arg secret "$HOOK_SECRET" --arg ref "refs/heads/$BRANCH_NAME" \
+  '{id: $id, "execute-command": $cmd, "command-working-directory": $dir, "trigger-rule": {"and": [{"match": {"type": "value", "value": "push", "parameter": {"source": "header", "name": "X-GitHub-Event"}}}, {"match": {"type": "value", "value": $ref, "parameter": {"source": "payload", "name": "ref"}}}, {"match": {"type": "payload-hash-sha256", "secret": $secret, "parameter": {"source": "header", "name": "X-Hub-Signature-256"}}}]}}')
+else
+  NEW_HOOK=$(jq -n --arg id "$PROJECT_NAME" --arg cmd "$DEPLOY_SCRIPT" --arg dir "$PROJECT_PATH" --arg secret "$HOOK_SECRET" --arg ref "refs/heads/$BRANCH_NAME" \
+  '{id: $id, "execute-command": $cmd, "command-working-directory": $dir, "trigger-rule": {"and": [{"match": {"type": "value", "value": "push", "parameter": {"source": "payload", "name": "object_kind"}}}, {"match": {"type": "value", "value": $ref, "parameter": {"source": "payload", "name": "ref"}}}, {"match": {"type": "value", "value": $secret, "parameter": {"source": "header", "name": "X-Gitlab-Token"}}}]}}')
+fi
 
 if [ -f "$HOOKS_FILE" ]; then
   jq --argjson hook "$NEW_HOOK" 'map(select(.id != $hook.id)) + [$hook]' "$HOOKS_FILE" > "$HOOKS_FILE.tmp" && mv "$HOOKS_FILE.tmp" "$HOOKS_FILE"
@@ -229,3 +306,19 @@ sudo systemctl enable webhook
 sudo systemctl restart webhook
 
 echo "✅ SETUP COMPLETE"
+echo ""
+echo "-------------------------------------------------------"
+echo "🔔 NEXT STEP: ADD WEBHOOK IN REPOSITORY SETTINGS"
+if [ "$PROVIDER" = "github" ]; then
+  echo "1. Go to your GitHub Repository -> Settings -> Webhooks -> Add webhook"
+  echo "2. Payload URL:  $WEBHOOK_URL"
+  echo "3. Content type: application/json"
+  echo "4. Secret:       $HOOK_SECRET"
+  echo "5. Events:       Just the push event"
+else
+  echo "1. Go to your GitLab Repository -> Settings -> Webhooks -> Add new webhook"
+  echo "2. URL:          $WEBHOOK_URL"
+  echo "3. Secret token: $HOOK_SECRET"
+  echo "4. Trigger:      Push events (branch: $BRANCH_NAME)"
+fi
+echo "-------------------------------------------------------"
