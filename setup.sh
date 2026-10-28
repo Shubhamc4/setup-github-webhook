@@ -37,7 +37,7 @@ PUBLIC_IP=$(hostname -I | awk '{print $1}')
 #######################################
 # 3. Conditional SSH Key Generation & Wrapper
 #######################################
-if [ ! -d "$SSH_FOLDER" ] \vert{}\vert{} [ ! -f "$SSH_PATH" ]; then
+if [ ! -d "$SSH_FOLDER" ] || [ ! -f "$SSH_PATH" ]; then
     echo "SSH folder or key not found. Setting up..."
     sudo mkdir -p "$SSH_FOLDER"
     sudo chown -R "$USER:$USER" "$SSH_FOLDER"
@@ -72,7 +72,7 @@ read -p "Press ENTER once the Deploy Key is added to GitLab..."
 # 4. Verify repo access
 #######################################
 echo "Testing connection..."
-if ! GIT_SSH="$SSH_WRAPPER" git ls-remote --heads "$REPO_PATH" "$BRANCH_NAME" \vert{} grep -q "$BRANCH_NAME"; then
+if ! GIT_SSH="$SSH_WRAPPER" git ls-remote --heads "$REPO_PATH" "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
   echo "❌ ERROR: Cannot access repo. Ensure the Deploy Key is added and has read access."
   exit 1
 fi
@@ -177,7 +177,7 @@ trap 'notify_deploy "❌ Failed at: \`$BASH_COMMAND\` (Exit: $?)" 15158332 "FAIL
 EOF
 
 # Placeholder Replacements
-APP_NAME_FORMATTED="${APP_NAME//-/ }"
+APP_NAME_FORMATTED="${PROJECT_NAME//-/ }"
 sed -i "s|SSH_WRAPPER_PLACEHOLDER|$SSH_WRAPPER|g" "$DEPLOY_SCRIPT"
 sed -i "s|PROJECT_PATH_PLACEHOLDER|$PROJECT_PATH|g" "$DEPLOY_SCRIPT"
 sed -i "s|DISCORD_URL_PLACEHOLDER|$DISCORD_URL|g" "$DEPLOY_SCRIPT"
@@ -202,7 +202,7 @@ NEW_HOOK=$(jq -n --arg id "$PROJECT_NAME" --arg cmd "$DEPLOY_SCRIPT" --arg dir "
 if [ -f "$HOOKS_FILE" ]; then
   jq --argjson hook "$NEW_HOOK" 'map(select(.id != $hook.id)) + [$hook]' "$HOOKS_FILE" > "$HOOKS_FILE.tmp" && mv "$HOOKS_FILE.tmp" "$HOOKS_FILE"
 else
-  echo "$NEW_HOOK" \vert{} jq -s '.' > "$HOOKS_FILE"
+  echo "$NEW_HOOK" | jq -s '.' > "$HOOKS_FILE"
 fi
 
 sudo bash -c "cat <<EOF > /etc/systemd/system/webhook.service
